@@ -4,6 +4,7 @@ using Conda
 Conda.add("pip")
 Conda.add("seaborn")
 Conda.add("scikit-learn")
+Conda.add("qt")
 
 pip = joinpath(Conda.SCRIPTDIR, "pip")
 run(`$pip install --no-deps pydotplus`)
