@@ -24,4 +24,5 @@ Pkg.clone("https://github.com/davidanthoff/PyRhodium.jl.git")
 
 ## Getting started
 
-Take a look at the Rhodium.ipynb file in the examples folder.
+Take a look at the [Rhodium](https://github.com/davidanthoff/PyRhodium.jl/blob/master/examples/Rhodium.ipynb)
+IJulia file in the examples folder.
