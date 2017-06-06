@@ -7,6 +7,7 @@ Conda.add("scikit-learn")
 Conda.add("qt")
 
 pip = joinpath(Conda.SCRIPTDIR, "pip")
+run(`$pip install --no-deps mpldatacursor`)
 run(`$pip install --no-deps pydotplus`)
 run(`$pip install --no-deps SAlib`)
 run(`$pip install --no-deps git+https://github.com/Project-Platypus/PRIM.git\#egg=prim`)
