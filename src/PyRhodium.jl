@@ -2,10 +2,13 @@ module PyRhodium
 
 using PyCall
 using PyPlot
+using IterableTables
+using NamedTuples
 @pyimport rhodium
 
-export Model, Parameter, Response, RealLever, optimize, scatter2d, setparameters,
-    setlevers, setresponses
+export Model, Parameter, Response, RealLever, IntegerLever, Constraint, Brush,
+    optimize, scatter2d, setparameters, setlevers, setresponses,
+    setconstraints, scatter3d, pairs, parallel_coordinates, apply
 
 py"""
 from rhodium import *
@@ -40,7 +43,7 @@ struct Response
     _r
 
     function Response(name::AbstractString, kind::Symbol)
-        kind in (:MAXIMIZE, :MINIMIZE) || error("The kind argument must be either :MAXIMIZE or :MINIMIZE")
+        kind in (:MAXIMIZE, :MINIMIZE, :INFO) || error("The kind argument must be either :MAXIMIZE or :MINIMIZE")
 
         return new(rhodium.Response(name, rhodium.Response[kind]))
     end
@@ -51,13 +54,76 @@ struct Lever
     _l
 end
 
-struct Output
+struct Constraint
+    _c
+
+    function Constraint(con::AbstractString)
+        return new(rhodium.Constraint(con))
+    end
+end
+
+struct Brush
+    _b
+    function Brush(def::AbstractString)
+        return new(rhodium.Brush(def))
+    end
+end
+
+struct Output{T}
     _m::Model
     _o
 end
 
-function Base.length(o::Output)
+@generated function Base.getindex{T}(o::Output{T}, i::Int)
+    constructor_call = Expr(:call, :($T))
+    for (i,t) in enumerate(T.parameters)
+        push!(constructor_call.args, :(o._o[i][$( String(fieldnames(T)[i]) )]))
+    end
+
+    quote        
+        return $constructor_call
+    end
+end
+
+function Base.length{T}(o::Output{T})
     return length(o._o)
+end
+
+function Base.eltype{T}(o::Output{T})
+    return T
+end
+
+function Base.start{T}(iter::Output{T})
+    return 1
+end
+
+@generated function convert_to_NT{T}(::Type{T}, d::Dict)
+    constructor_call = Expr(:call, :($T))
+    for (i,t) in enumerate(T.parameters)
+        push!(constructor_call.args, :(d[$( String(fieldnames(T)[i]) )]))
+    end
+
+    quote        
+        return $constructor_call
+    end
+end
+
+@generated function Base.next{T}(o::Output{T}, state)
+    constructor_call = Expr(:call, :($T))
+    for (i,t) in enumerate(T.parameters)
+        push!(constructor_call.args, :(source[i][$( String(fieldnames(T)[i]) )]))
+    end
+
+    quote
+        i = state
+        source = o._o
+        a = $constructor_call
+        return a, state+1
+    end
+end
+
+function Base.done{T}(o::Output{T}, state)
+    return state>length(o)
 end
 
 function setparameters(m::Model, parameters::Vector{Parameter})
@@ -65,9 +131,28 @@ function setparameters(m::Model, parameters::Vector{Parameter})
     return nothing
 end
 
+function setparameters{T<:Union{Symbol,Pair{Symbol,Any}}}(m::Model, parameters::Vector{T})
+    m._m[:parameters] = map(parameters) do i
+        if isa(i, Symbol)
+            return rhodium.Parameter(String(i))
+        else
+            return rhodium.Parameter(String(i.first), i.second)
+        end
+    end
+    nothing
+end
+
 function setresponses(m::Model, responses::Vector{Response})
     m._m[:responses] = map(i->i._r, responses)
     return nothing
+end
+
+function setresponses(m::Model, responses::Vector{Pair{Symbol,Symbol}})
+    m._m[:responses] = map(responses) do i        
+        i.second in (:MAXIMIZE, :MINIMIZE, :INFO) || error("The kind argument must be either :MAXIMIZE or :MINIMIZE")
+        return rhodium.Response(String(i.first), rhodium.Response[i.second])
+    end
+    nothing
 end
 
 function setlevers(m::Model, levers::Vector{Lever})
@@ -75,17 +160,106 @@ function setlevers(m::Model, levers::Vector{Lever})
     return nothing
 end
 
+function setconstraints(m::Model, constraints::Vector{Constraint})
+    m._m[:constraints] = map(i->i._c, constraints)
+    return nothing
+end
 
-function RealLever(name::AbstractString, min, max; length=0)
+function setconstraints(m::Model, constraints::Vector{String})
+    m._m[:constraints] = map(constraints) do i        
+        return rhodium.Constraint(i)
+    end
+    nothing    
+end
+
+function setconstraints(m::Model, constraints::Vector{Any})
+    m._m[:constraints] = map(i->i._c, constraints)
+    return nothing
+end
+
+function IntegerLever(name::AbstractString, min, max; length=1)
+    return Lever(rhodium.IntegerLever(name, min, max, length=length))
+end
+
+function RealLever(name::AbstractString, min, max; length=1)
     return Lever(rhodium.RealLever(name, min, max, length=length))
 end
 
 function optimize(m::Model, algorithm, trials)
-    output = Output(m, pycall(rhodium.optimize, PyObject, m._m, algorithm, trials))
+    py_output = pycall(rhodium.optimize, PyObject, m._m, algorithm, trials)
+
+    t2 = :(Output{Any})
+    if length(py_output) > 0
+        first_el = py_output[1]
+        names = Symbol.(collect(keys(first_el)))
+        types = typeof.(collect(values(first_el)))
+
+
+        col_expressions = Array{Expr,1}()
+        for i in 1:length(names)
+            etype = types[i]
+            push!(col_expressions, Expr(:(::), names[i], etype))
+        end
+        t_expr = NamedTuples.make_tuple(col_expressions)
+        t_expr.args[1] = Expr(:., :NamedTuples, QuoteNode(t_expr.args[1]))
+
+        
+        t2.args[2] = t_expr
+    end
+
+    t = eval(t2)
+
+    output = t(m, py_output)
+
+    return output
 end
 
-function scatter2d(o::Output)
-    return rhodium.scatter2d(o._m._m, o._o)
+function Base.findmax{T}(o::Output{T}, key::Symbol)
+    res = o._o[:find_max](String(key))
+    return convert_to_NT(T, res)
+end
+
+function Base.findmin{T}(o::Output{T}, key::Symbol)
+    res = o._o[:find_min](String(key))
+    return convert_to_NT(T, res)
+end
+
+function Base.find{T}(o::Output{T}, expr; inverse=false)
+    res = o._o[:find](expr, inverse=inverse)
+    return convert_to_NT.(T, res)
+end
+
+function apply{T}(o::Output{T}, expr; update=false)
+    res = o._o[:apply](expr, update=update)
+    return res
+end
+
+function scatter2d(o::Output; brush=nothing, kwargs...)
+    if brush!=nothing
+        push!(kwargs, (:brush, map(i->i._b, brush)))
+    end
+    return rhodium.scatter2d(o._m._m, o._o; kwargs...)
+end
+
+function scatter3d(o::Output; brush=nothing, kwargs...)
+    if brush!=nothing
+        push!(kwargs, (:brush, map(i->i._b, brush)))
+    end
+    return rhodium.scatter3d(o._m._m, o._o; kwargs...)
+end
+
+function pairs(o::Output; brush=nothing, kwargs...)
+    if brush!=nothing
+        push!(kwargs, (:brush, map(i->i._b, brush)))
+    end
+    return rhodium.pairs(o._m._m, o._o; kwargs...)
+end
+
+function parallel_coordinates(o::Output; brush=nothing, kwargs...)
+    if brush!=nothing
+        push!(kwargs, (:brush, map(i->i._b, brush)))
+    end
+    return rhodium.parallel_coordinates(o._m._m, o._o; kwargs...)
 end
 
 end # module
