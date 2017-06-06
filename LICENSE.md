@@ -1,4 +1,4 @@
-The Rhodium.jl package is licensed under the MIT "Expat" License:
+The PyRhodium.jl package is licensed under the MIT "Expat" License:
 
 > Copyright (c) 2017: David Anthoff.
 > 

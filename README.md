@@ -1,4 +1,4 @@
-# Rhodium
+# PyRhodium
 
 [![Build Status](https://travis-ci.org/davidanthoff/Rhodium.jl.svg?branch=master)](https://travis-ci.org/davidanthoff/Rhodium.jl)
 

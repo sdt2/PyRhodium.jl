@@ -1,4 +1,4 @@
-using Rhodium
+using PyRhodium
 using Base.Test
 
 # write your own tests here
