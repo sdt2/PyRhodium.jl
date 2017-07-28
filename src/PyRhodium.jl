@@ -201,8 +201,6 @@ function optimize(m::Model, algorithm, trials)
             push!(col_expressions, Expr(:(::), names[i], etype))
         end
         t_expr = NamedTuples.make_tuple(col_expressions)
-        t_expr.args[1] = Expr(:., :NamedTuples, QuoteNode(t_expr.args[1]))
-
         
         t2.args[2] = t_expr
     end
