@@ -4,11 +4,13 @@ using PyCall
 using PyPlot
 using IterableTables
 using NamedTuples
+using Distributions
 @pyimport rhodium
 
 export Model, Parameter, Response, RealLever, IntegerLever, Constraint, Brush,
     optimize, scatter2d, setparameters, setlevers, setresponses,
-    setconstraints, scatter3d, pairs, parallel_coordinates, apply
+    setconstraints, scatter3d, pairs, parallel_coordinates, apply,
+    evaluate, setuncertainties, sample_lhs
 
 py"""
 from rhodium import *
@@ -185,6 +187,39 @@ function RealLever(name::AbstractString, min, max; length=1)
     return Lever(rhodium.RealLever(name, min, max, length=length))
 end
 
+function setuncertainties(m::Model, uncertainties::Vector{Pair{Symbol,T}} where T)
+    m._m[:uncertainties] = map(uncertainties) do i
+        if isa(i.second, Distributions.Uniform{Float64})
+            rhodium.UniformUncertainty(string(i.first), i.second.a, i.second.b)
+        else
+            error("This distribution type is currently not supported by Rhodium")
+        end
+    end
+    return nothing
+end
+
+function sample_lhs(m::Model, nsamples::Int)
+    py_output = pycall(rhodium.sample_lhs, PyAny, m._m, nsamples)
+
+    first_el = py_output[1]
+    names = Symbol.(collect(keys(first_el)))
+    types = typeof.(collect(values(first_el)))
+
+    col_expressions = Array{Expr,1}()
+    for i in 1:length(names)
+        etype = types[i]
+    push!(col_expressions, Expr(:(::), names[i], etype))
+    end
+    t_expr = NamedTuples.make_tuple(col_expressions)
+        
+    t = eval(t_expr)
+
+    output = [t(values(i)...) for i in py_output]
+
+    return output
+end
+
+
 function optimize(m::Model, algorithm, trials)
     py_output = pycall(rhodium.optimize, PyObject, m._m, algorithm, trials)
 
@@ -211,6 +246,57 @@ function optimize(m::Model, algorithm, trials)
 
     return output
 end
+
+function evaluate(m::Model, policy::Dict{Symbol,T} where T)
+    py_output = pycall(rhodium.evaluate, PyDict, m._m, policy)
+
+    names = [convert(Symbol,i) for i in keys(py_output)]
+    types = [typeof(i) for i in values(py_output)]
+
+    col_expressions = Array{Expr,1}()
+    for i in 1:length(names)
+        etype = types[i]
+        push!(col_expressions, Expr(:(::), names[i], etype))
+    end
+    t_expr = NamedTuples.make_tuple(col_expressions)
+    t = eval(t_expr)
+
+    output = t(values(py_output)...)
+
+    return output
+end
+
+function evaluate(m::Model, policy::NamedTuple)
+    return evaluate(m, Dict(k=>v for (k,v) in zip(keys(policy), values(policy))))
+end
+
+function evaluate(m::Model, policies::Vector{Dict{Symbol,T}} where T)
+    py_output = pycall(rhodium.evaluate, PyAny, m._m, policies)
+
+    first_el = py_output[1]
+    names = Symbol.(collect(keys(first_el)))
+    types = typeof.(collect(values(first_el)))
+
+    col_expressions = Array{Expr,1}()
+    for i in 1:length(names)
+        etype = types[i]
+    push!(col_expressions, Expr(:(::), names[i], etype))
+    end
+    t_expr = NamedTuples.make_tuple(col_expressions)
+        
+    t = eval(t_expr)
+
+    output = [t(values(i)...) for i in py_output]    
+
+    return output
+end
+
+function evaluate(m::Model, policies::Vector{T} where T<:NamedTuple)
+    output = evaluate(m, [Dict(k=>v for (k,v) in zip(keys(policy), values(policy))) for policy in policies])
+
+    return output
+end
+
 
 function Base.findmax{T}(o::Output{T}, key::Symbol)
     res = o._o[:find_max](String(key))
