@@ -71,6 +71,10 @@ struct Brush
     end
 end
 
+struct DataSet
+    _pydataset
+end
+
 struct Output{T}
     _m::Model
     _o
@@ -271,24 +275,34 @@ function evaluate(m::Model, policy::NamedTuple)
 end
 
 function evaluate(m::Model, policies::Vector{Dict{Symbol,T}} where T)
-    py_output = pycall(rhodium.evaluate, PyAny, m._m, policies)
+    py_output = pycall(rhodium.evaluate, PyObject, m._m, policies)
 
-    first_el = py_output[1]
-    names = Symbol.(collect(keys(first_el)))
-    types = typeof.(collect(values(first_el)))
+    ds = DataSet(py_output)
 
-    col_expressions = Array{Expr,1}()
-    for i in 1:length(names)
-        etype = types[i]
-    push!(col_expressions, Expr(:(::), names[i], etype))
-    end
-    t_expr = NamedTuples.make_tuple(col_expressions)
+    # println("WORKED")
+
+    # first_el = py_output[1]
+    # names = Symbol.(collect(keys(first_el)))
+    # types = typeof.(collect(values(first_el)))
+
+    # col_expressions = Array{Expr,1}()
+    # for i in 1:length(names)
+    #     etype = types[i]
+    # push!(col_expressions, Expr(:(::), names[i], etype))
+    # end
+    # t_expr = NamedTuples.make_tuple(col_expressions)
         
-    t = eval(t_expr)
+    # t = eval(t_expr)
 
-    output = [t(values(i)...) for i in py_output]    
+    # output = [t(values(i)...) for i in py_output]    
 
-    return output
+    return ds
+end
+
+function apply(results::DataSet, criterion)
+    asdf = results._pydataset[:apply](criterion)
+
+    return asdf
 end
 
 function evaluate(m::Model, policies::Vector{T} where T<:NamedTuple)
