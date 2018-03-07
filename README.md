@@ -12,7 +12,7 @@ This package provides a julia wrapper around the Python
 
 ## Status
 
-This package is work in project, not everything works at this moment.
+This package is work in progress, not everything works at this moment.
 
 ## Installation
 
