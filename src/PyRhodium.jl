@@ -55,7 +55,7 @@ end
 
 Parameter(name::Symbol, default_value::Any=nothing) = Parameter(String(name), default_value)
 
-Parameter(obj::Pair{Symbol, Any}) = Parameter(obj.first, obj.second)
+Parameter(pair::Pair{Symbol, Any}) = Parameter(pair.first, pair.second)
 
 
 struct Response <: Wrapper
@@ -135,29 +135,28 @@ struct Output{T} <: Wrapper
     pyo::PyObject
 end
 
-# TBD: not sure about this...
 # In rhodium, a dataset is a subclass of list that holds only dicts.
-# In PyRhodium.jl, this becomes an array of named tuples, but it's
-# not a custom type (yet).
 struct DataSet <: Wrapper
     pyo::PyObject   # a python DataSet
-    tups::Vector{T <: NamedTuple}
 
+    function DataSet(pyo::PyObject)
+        return new(pyo)
+    end
+
+    # A string argument is interpreted in the python func as a file to load
     function DataSet(data::Union{AbstractString, AbstractArray}=nothing)
-        pyo = rhodium.DataSet(data)
-        vec = [convert_to_NT(T, d) for d in pyo]
-        new(pyo, vec)
+        new(rhodium.DataSet(data))
     end
 end
 
 @generated function Base.getindex{T}(o::Output{T}, i::Int)
-    constructor_call = Expr(:call, :($T))
+    expr = Expr(:call, :($T))
     for (i, t) in enumerate(T.parameters)
-        push!(constructor_call.args, :(o.pyo[i][$( String(fieldnames(T)[i]) )]))
+        push!(expr.args, :(o.pyo[i][$( String(fieldnames(T)[i]) )]))
     end
 
     quote        
-        return $constructor_call
+        return $expr
     end
 end
 
@@ -196,15 +195,15 @@ function Base.find{T}(o::Output{T}, expr; inverse=false)
 end
 
 @generated function Base.next{T}(o::Output{T}, state)
-    constructor_call = Expr(:call, :($T))
+    expr = Expr(:call, :($T))
     for (i, t) in enumerate(T.parameters)
-        push!(constructor_call.args, :(source[i][$( String(fieldnames(T)[i]) )]))
+        push!(expr.args, :(source[i][$( String(fieldnames(T)[i]) )]))
     end
 
     quote
         i = state
         source = o.pyo
-        a = $constructor_call
+        a = $expr
         return a, state + 1
     end
 end
@@ -282,9 +281,10 @@ function make_NT_type(dict::Dict; evaluate=true)
 end
 
 function sample_lhs(m::Model, nsamples::Int)
-    # returns a DataSet (a subclass of list), which holds (python) OrderedDicts
+    # returns a rhodium DataSet (a subclass of list), which holds (python) OrderedDicts
     py_output = pycall(rhodium.sample_lhs, PyAny, m.pyo, nsamples)
-        
+    
+    # Use first result dict as template to create named tuple type, T
     T = make_NT_type(py_output[1])
     output = [T(values(i)...) for i in py_output]
 
@@ -294,13 +294,8 @@ end
 function optimize(m::Model, algorithm, trials)
     py_output = pycall(rhodium.optimize, PyObject, m.pyo, algorithm, trials)
 
-    expr = :(Output{Any})
-    if length(py_output) > 0
-        expr.args[2] = make_NT_type(py_output[1], evaluate=false)
-    end
-
-    T = eval(expr)
-    output = T(m, py_output)
+    T = length(py_output) > 0 ? make_NT_type(py_output[1]) : Any
+    output = Output{T}(m, py_output)
 
     return output
 end
@@ -314,10 +309,6 @@ function evaluate(m::Model, policy::Dict{Symbol,T} where T)
     return output
 end
 
-function evaluate(m::Model, policy::NamedTuple)
-    return evaluate(m, Dict(k=>v for (k,v) in zip(keys(policy), values(policy))))
-end
-
 function evaluate(m::Model, policies::Vector{Dict{Symbol,T}} where T)
     py_output = pycall(rhodium.evaluate, PyAny, m.pyo, policies)
 
@@ -327,13 +318,15 @@ function evaluate(m::Model, policies::Vector{Dict{Symbol,T}} where T)
     return output
 end
 
-function evaluate(m::Model, policies::Vector{T} where T<:NamedTuple)
-    output = evaluate(m, [Dict(k => v for (k,v) in zip(keys(policy), values(policy))) for policy in policies])
-    return output
-end
+evaluate(m::Model, policy::NamedTuple) = evaluate(m, Dict(k=>v for (k,v) in zip(keys(policy), values(policy))))
 
-function apply{T}(o::Output{T}, expr; update=false)
-    res = o.pyo[:apply](expr, update=update)
+evaluate(m::Model, policies::Vector{T} where T<:NamedTuple) = evaluate(m, [Dict(k => v for (k,v) in zip(keys(policy), values(policy))) for policy in policies])
+
+function apply{T}(o::Output{T}, expr; update=true)
+    println("apply($expr)")
+    # In Rhodium, apply is a one-liner calling _evaluate_all(expr, self, update)
+    res = pycall(o.pyo[:apply], PyAny, expr, update)
+    # res = o.pyo[:apply](expr, update=update)
     return res
 end
 
