@@ -5,13 +5,15 @@ using PyPlot
 using IterableTables
 using NamedTuples
 using Distributions
+using DataFrames
 
 @pyimport rhodium
 
 export
     Model, Parameter, Response, Lever, RealLever, IntegerLever, CategoricalLever, 
-    PermutationLever, SubsetLever, Constraint, Brush, optimize, scatter2d, scatter3d, 
-    pairs, parallel_coordinates, apply, evaluate, sample_lhs, set_parameters!, 
+    PermutationLever, SubsetLever, Constraint, Brush, DataSet, named_tuples,
+    optimize, scatter2d, scatter3d, pairs, parallel_coordinates, 
+    apply, evaluate, sample_lhs, set_parameters!, 
     set_levers!, set_responses!, set_constraints!, set_uncertainties!
 
 # TBD: see if it works to simply call __init__(function) without storing the function
@@ -149,68 +151,45 @@ struct DataSet <: Wrapper
     end
 end
 
-@generated function Base.getindex{T}(o::Output{T}, i::Int)
-    expr = Expr(:call, :($T))
-    for (i, t) in enumerate(T.parameters)
-        push!(expr.args, :(o.pyo[i][$( String(fieldnames(T)[i]) )]))
-    end
+Base.length(ds::DataSet) = length(ds.pyo)
 
-    quote        
-        return $expr
-    end
+Base.start(iter::DataSet) = 1
+
+Base.next(ds::DataSet, state) = ds.pyo[state], state + 1
+
+Base.done(ds::DataSet, state) = state > length(ds)
+
+Base.getindex(ds::DataSet, i::Int) = ds.pyo[i]
+
+function Base.findmax(ds::DataSet, key::Symbol)
+    return ds.pyo[:find_max](String(key))
 end
 
-# Convert a dict to NamedTuple of type `T`
-@generated function convert_to_NT{T}(::Type{T}, d::Dict)
-    expr = Expr(:call, :($T))
-    append!(expr.args, [:(d[$(String(name))]) for name in fieldnames(T)])
-    return expr
+function Base.findmin(ds::DataSet, key::Symbol)
+    return ds.pyo[:find_min](String(key))
 end
 
-function Base.length{T}(o::Output{T})
-    return length(o.pyo)
+function Base.find(ds::DataSet, expr; inverse=false)
+    return ds.pyo[:find](expr, inverse=inverse)
 end
 
-function Base.eltype{T}(o::Output{T})
-    return T
+# Create a NamedTuple type expression from the contents of the given dict,
+# returning the type or, if evaluate == false, the type expression.
+function make_NT_type(dict::Dict; evaluate=true)
+    names = map(Symbol, keys(dict))
+    types = map(typeof, values(dict))
+    col_exprs = [:($name::$etype) for (etype, name) in zip(types, names)]
+    t_expr = NamedTuples.make_tuple(col_exprs)
+    return evaluate ? eval(t_expr) : t_expr
 end
 
-function Base.start{T}(iter::Output{T})
-    return 1
+function named_tuples(ds::DataSet)
+    T = make_NT_type(ds[1])
+    output = [T(values(dict)...) for dict in ds]
 end
 
-function Base.findmax{T}(o::Output{T}, key::Symbol)
-    res = o.pyo[:find_max](String(key))
-    return convert_to_NT(T, res)
-end
-
-function Base.findmin{T}(o::Output{T}, key::Symbol)
-    res = o.pyo[:find_min](String(key))
-    return convert_to_NT(T, res)
-end
-
-function Base.find{T}(o::Output{T}, expr; inverse=false)
-    res = o.pyo[:find](expr, inverse=inverse)
-    return convert_to_NT.(T, res)
-end
-
-@generated function Base.next{T}(o::Output{T}, state)
-    expr = Expr(:call, :($T))
-    for (i, t) in enumerate(T.parameters)
-        push!(expr.args, :(source[i][$( String(fieldnames(T)[i]) )]))
-    end
-
-    quote
-        i = state
-        source = o.pyo
-        a = $expr
-        return a, state + 1
-    end
-end
-
-function Base.done{T}(o::Output{T}, state)
-    return state > length(o)
-end
+DataFrames.DataFrame(ds::DataSet) = DataFrames.DataFrame(named_tuples(ds))
+    
 
 """
     set_parameters!(m::Model, parameters::Vector{Parameter})
@@ -270,63 +249,29 @@ function set_uncertainties!(m::Model, uncertainties::Vector{Pair{Symbol,T}} wher
     return nothing
 end
 
-# Create a NamedTuple type expression from the contents of the given dict,
-# returning the type or, if evaluate == false, the type expression.
-function make_NT_type(dict::Dict; evaluate=true)
-    names = map(Symbol, keys(dict))
-    types = map(typeof, values(dict))
-    col_exprs = [:($name::$etype) for (etype, name) in zip(types, names)]
-    t_expr = NamedTuples.make_tuple(col_exprs)
-    return evaluate ? eval(t_expr) : t_expr
-end
-
 function sample_lhs(m::Model, nsamples::Int)
     # returns a rhodium DataSet (a subclass of list), which holds (python) OrderedDicts
     py_output = pycall(rhodium.sample_lhs, PyAny, m.pyo, nsamples)
-    
-    # Use first result dict as template to create named tuple type, T
-    T = make_NT_type(py_output[1])
-    output = [T(values(i)...) for i in py_output]
-
-    return output
+    return DataSet(py_output)
 end
 
 function optimize(m::Model, algorithm, trials)
     py_output = pycall(rhodium.optimize, PyObject, m.pyo, algorithm, trials)
-
-    T = length(py_output) > 0 ? make_NT_type(py_output[1]) : Any
-    output = Output{T}(m, py_output)
-
-    return output
+    return DataSet(py_output)
 end
 
-function evaluate(m::Model, policy::Dict{Symbol,T} where T)
+function evaluate(m::Model, policy::Dict{Symbol,Any})
     py_output = pycall(rhodium.evaluate, PyDict, m.pyo, policy)
-
-    T = make_NT_type(py_output[1])
-    output = T(values(py_output)...)
-
-    return output
+    return DataSet(py_output)
 end
 
-function evaluate(m::Model, policies::Vector{Dict{Symbol,T}} where T)
+function evaluate(m::Model, policies::Vector{Dict{Symbol,Any}})
     py_output = pycall(rhodium.evaluate, PyAny, m.pyo, policies)
-
-    T = make_NT_type(py_output[1])
-    output = [T(values(dict)...) for dict in py_output]
-
-    return output
+    return DataSet(py_output)
 end
 
-evaluate(m::Model, policy::NamedTuple) = evaluate(m, Dict(k=>v for (k,v) in zip(keys(policy), values(policy))))
-
-evaluate(m::Model, policies::Vector{T} where T<:NamedTuple) = evaluate(m, [Dict(k => v for (k,v) in zip(keys(policy), values(policy))) for policy in policies])
-
-function apply{T}(o::Output{T}, expr; update=true)
-    println("apply($expr)")
-    # In Rhodium, apply is a one-liner calling _evaluate_all(expr, self, update)
-    res = pycall(o.pyo[:apply], PyAny, expr, update)
-    # res = o.pyo[:apply](expr, update=update)
+function apply(ds::DataSet, expr; update=true)
+    res = pycall(ds.pyo[:apply], PyAny, expr, update)
     return res
 end
 

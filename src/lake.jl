@@ -2,6 +2,7 @@ using PyRhodium
 using Roots
 using Distributions
 using DataFrames
+using IterableTables
 
 function lake_problem(;pollution_limit=nothing,
          b = 0.42,       # decay rate for P in lake (0.42 = irreversible)
@@ -58,8 +59,8 @@ set_responses!(m, [Response("max_P", :MINIMIZE),
 
 set_levers!(m, [RealLever("pollution_limit", 0.0, 0.1, length=100)])
 
-#output = optimize(m, "NSGAII", 1000)
-output = optimize(m, "NSGAII", 100)
+nsamples = 100 # 1000
+output = optimize(m, "NSGAII", nsamples)
 
 println("Found $(length(output)) optimal policies!")
 
@@ -71,13 +72,18 @@ policies = find(output, "utility > 0.5");
 
 policy = findmax(output, :reliability)
 
-println("Max Phosphorus in Lake: ", policy.max_P)
-println("Utility:                ", policy.utility)
-println("Inertia:                ", policy.inertia)
-println("Reliability:            ", policy.reliability)
+# println("Max Phosphorus in Lake: ", policy.max_P)
+# println("Utility:                ", policy.utility)
+# println("Inertia:                ", policy.inertia)
+# println("Reliability:            ", policy.reliability)
+
+println("Max Phosphorus in Lake: ", policy["max_P"])
+println("Utility:                ", policy["utility"])
+println("Inertia:                ", policy["inertia"])
+println("Reliability:            ", policy["reliability"])
 
 df = DataFrame(output)
-arr = collect(output);
+# arr = collect(output)
 
 result = apply(output, "total_pollution = sum(pollution_limit)")
 policy = findmin(output, :total_pollution)
