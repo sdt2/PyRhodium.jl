@@ -6,14 +6,17 @@ using IterableTables
 using NamedTuples
 using Distributions
 using DataFrames
+using DataStructures
 
 @pyimport rhodium
+@pyimport prim
+@pyimport pandas as pd
 
 export
     Model, Parameter, Response, Lever, RealLever, IntegerLever, CategoricalLever, 
-    PermutationLever, SubsetLever, Constraint, Brush, DataSet, named_tuples,
-    optimize, scatter2d, scatter3d, pairs, parallel_coordinates, 
-    apply, evaluate, sample_lhs, set_parameters!, 
+    PermutationLever, SubsetLever, Constraint, Brush, DataSet, Prim,
+    named_tuple, named_tuples, optimize, scatter2d, scatter3d, pairs, 
+    parallel_coordinates, apply, evaluate, sample_lhs, set_parameters!, 
     set_levers!, set_responses!, set_constraints!, set_uncertainties!
 
 # TBD: see if it works to simply call __init__(function) without storing the function
@@ -29,6 +32,13 @@ class JuliaModel(Model):
         result = self.j_function(**kwargs)
         return result
 """
+
+py"""
+def dump(obj):
+    print(obj)
+"""
+
+pydump(obj) = py"dump($obj)"
 
 # Wrapper classes have a pyo field that holds a PyObject
 abstract type Wrapper end
@@ -151,6 +161,73 @@ struct DataSet <: Wrapper
     end
 end
 
+# From original python doc:
+# x : a matrix-like object (pandas.DataFrame, numpy.recarray, etc.)
+# the independent variables [can be anything convertible to a DataFrame]
+#
+# y : a list-like object, the column name (str), or callable
+# the dependent variable either provided as a list-like object
+# classifying the data into cases of interest (e.g., False/True),
+# a list-like object storing the raw variable value (in which case
+# a threshold must be given), a string identifying the dependent
+# variable in x, or a function called on each row of x to compute the
+# dependent variable
+struct Prim <: Wrapper
+    pyo::PyObject
+    
+    function Prim(x::DataSet, y::Vector; 
+                  threshold=nothing, threshold_type=">",
+                  obj_func=prim.lenient1, 
+                  peel_alpha=0.05, paste_alpha=0.05, mass_min=0.05, 
+                  include=nothing, exclude=nothing, coi=nothing)
+
+        # TBD: Convert directly to np.recarray? That's the end result 
+        # on the python side, so we'd avoid building 2 intermediate DFs.
+        df = DataFrame(x)
+
+        # However... numpy's drop_names is failing, complaining about
+        # 'data type not understood',). We process the include/exclude 
+        # args here before passing the data to python.
+        if include != nothing
+            if ! (include isa AbstractArray)
+                include = [include]
+            end
+
+            colnames = [Symbol(name) for name in include]
+            df = df[colnames]
+        end
+        
+        if exclude != nothing
+            if ! (exclude isa AbstractArray)
+                exclude = [exclude]
+            end
+            
+            colnames = collect(setdiff(Set(names(df)), Set(map(Symbol, exclude))))
+            df = df[colnames]
+        end
+
+        dict = Dict(k => df[k] for k in names(df))
+        pandasDF = pd.DataFrame(dict)
+
+        # Convert y into Vector{Bool} by matching category of interest
+        # Note that classification and coi can be strings or symbols,
+        # as long as they're consistent (i.e., 'in' and '==' work.)
+        if coi != nothing
+            if coi isa AbstractArray
+                y = [value in coi for value in y]
+            else
+                y = (y .== coi)
+            end
+        end      
+
+        prim = rhodium.Prim(pandasDF, y, 
+                            threshold=threshold, threshold_type=threshold_type,
+                            obj_func=obj_func, peel_alpha=peel_alpha, paste_alpha=paste_alpha, 
+                            mass_min=mass_min) # include=include, exclude=exclude, coi=coi)
+        return new(prim)
+    end
+end
+
 Base.length(ds::DataSet) = length(ds.pyo)
 
 Base.start(iter::DataSet) = 1
@@ -162,20 +239,20 @@ Base.done(ds::DataSet, state) = state > length(ds)
 Base.getindex(ds::DataSet, i::Int) = ds.pyo[i]
 
 function Base.findmax(ds::DataSet, key::Symbol)
-    return ds.pyo[:find_max](String(key))
+    return pycall(ds.pyo[:find_max], PyDict, String(key))
 end
 
 function Base.findmin(ds::DataSet, key::Symbol)
-    return ds.pyo[:find_min](String(key))
+    return pycall(ds.pyo[:find_min], PyDict, String(key))
 end
 
 function Base.find(ds::DataSet, expr; inverse=false)
-    return ds.pyo[:find](expr, inverse=inverse)
+    return pycall(ds.pyo[:find], PyObject, expr, inverse=inverse)
 end
 
 # Create a NamedTuple type expression from the contents of the given dict,
 # returning the type or, if evaluate == false, the type expression.
-function make_NT_type(dict::Dict; evaluate=true)
+function make_NT_type(dict::Union{Dict, PyDict}; evaluate=true)
     names = map(Symbol, keys(dict))
     types = map(typeof, values(dict))
     col_exprs = [:($name::$etype) for (etype, name) in zip(types, names)]
@@ -183,13 +260,29 @@ function make_NT_type(dict::Dict; evaluate=true)
     return evaluate ? eval(t_expr) : t_expr
 end
 
+function named_tuple(d::Union{Dict, PyDict})
+    T = make_NT_type(d)
+    return T(values(d)...)
+end
+
 function named_tuples(ds::DataSet)
     T = make_NT_type(ds[1])
     output = [T(values(dict)...) for dict in ds]
 end
 
+#
+# To some, "type piracy". To others, useful conversion methods. ;~)
+#
 DataFrames.DataFrame(ds::DataSet) = DataFrames.DataFrame(named_tuples(ds))
-    
+
+function DataStructures.Dict(nt::NamedTuple) 
+    return DataStructures.Dict{Symbol, Any}(collect(k => v for (k, v) in zip(keys(nt), values(nt))))
+end
+
+function DataStructures.Dict(pydict::PyDict)
+    return DataStructures.Dict(Symbol(k) => v for (k, v) in pydict)
+end
+
 
 """
     set_parameters!(m::Model, parameters::Vector{Parameter})
@@ -251,7 +344,7 @@ end
 
 function sample_lhs(m::Model, nsamples::Int)
     # returns a rhodium DataSet (a subclass of list), which holds (python) OrderedDicts
-    py_output = pycall(rhodium.sample_lhs, PyAny, m.pyo, nsamples)
+    py_output = pycall(rhodium.sample_lhs, PyObject, m.pyo, nsamples)
     return DataSet(py_output)
 end
 
@@ -260,19 +353,21 @@ function optimize(m::Model, algorithm, trials)
     return DataSet(py_output)
 end
 
-function evaluate(m::Model, policy::Dict{Symbol,Any})
-    py_output = pycall(rhodium.evaluate, PyDict, m.pyo, policy)
-    return DataSet(py_output)
+function evaluate(m::Model, policy::Dict)
+    return pycall(rhodium.evaluate, PyDict, m.pyo, policy)
 end
 
-function evaluate(m::Model, policies::Vector{Dict{Symbol,Any}})
-    py_output = pycall(rhodium.evaluate, PyAny, m.pyo, policies)
+# If passed a named tuple, return result as one, too
+evaluate(m::Model, policy::NamedTuple) = named_tuple(evaluate(m, Dict(policy)))
+
+function evaluate(m::Model, policies::Vector)
+    py_output = pycall(rhodium.evaluate, PyObject, m.pyo, policies)
     return DataSet(py_output)
 end
 
 function apply(ds::DataSet, expr; update=true)
-    res = pycall(ds.pyo[:apply], PyAny, expr, update)
-    return res
+    res = pycall(ds.pyo[:apply], PyVector, expr, update)
+    return collect(res)
 end
 
 # function apply(m::Model, results::Vector{T} where T<:NamedTuple, expr; update=false)
@@ -287,24 +382,24 @@ function _add_brush!(kwargs, brush)
     end
 end
 
-function scatter2d(o::Output; brush=nothing, kwargs...)
+function scatter2d(m::Model, ds::DataSet; brush=nothing, kwargs...)
     _add_brush!(kwargs, brush)
-    return rhodium.scatter2d(o.model.pyo, o.pyo; kwargs...)
+    return rhodium.scatter2d(m.pyo, ds.pyo; kwargs...)
 end
 
-function scatter3d(o::Output; brush=nothing, kwargs...)
+function scatter3d(m::Model, ds::DataSet; brush=nothing, kwargs...)
     _add_brush!(kwargs, brush)
-    return rhodium.scatter3d(o.model.pyo, o.pyo; kwargs...)
+    return rhodium.scatter3d(m.pyo, ds.pyo; kwargs...)
 end
 
-function pairs(o::Output; brush=nothing, kwargs...)
+function pairs(m::Model, ds::DataSet; brush=nothing, kwargs...)
     _add_brush!(kwargs, brush)
-    return rhodium.pairs(o.model.pyo, o.pyo; kwargs...)
+    return rhodium.pairs(m.pyo, ds.pyo; kwargs...)
 end
 
-function parallel_coordinates(o::Output; brush=nothing, kwargs...)
+function parallel_coordinates(m::Model, ds::DataSet; brush=nothing, kwargs...)
     _add_brush!(kwargs, brush)
-    return rhodium.parallel_coordinates(o.model.pyo, o.pyo; kwargs...)
+    return rhodium.parallel_coordinates(m.pyo, ds.pyo; kwargs...)
 end
 
 function use_seaborn(style="darkgrid")
