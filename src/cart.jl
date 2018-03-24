@@ -8,10 +8,10 @@ struct Cart <: Wrapper
     function Cart(x::DataSet, y::Vector; threshold=nothing, threshold_type=">",
                          include=nothing, exclude=nothing, kwargs...)
 
-        pandasDF = pandas_dataframe(x)
+        pandasDF = pandas_dataframe(x; include=include, exclude=exclude)
 
         cart = rhodium.Cart(pandasDF, y; threshold=threshold, threshold_type=threshold_type,
-                            include=include, exclude=exclude, kwargs...)
+                            kwargs...)
         new(cart)
     end
 end
@@ -21,8 +21,8 @@ function show_tree(c::Cart; kwargs...)
     return fig
 end
 
-function print_tree(c::Cart, coi=nothing, all=true; kwargs...)
-    c.pyo[:show_tree](;coi=coi, all=all, kwargs...)
+function print_tree(c::Cart; coi=nothing, all=true, kwargs...)
+    c.pyo[:print_tree](;coi=coi, all=all, kwargs...)
     nothing
 end
 

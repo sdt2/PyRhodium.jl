@@ -50,7 +50,7 @@ struct Prim <: Wrapper
                   peel_alpha=0.05, paste_alpha=0.05, mass_min=0.05, 
                   include=nothing, exclude=nothing, coi=nothing)
 
-        pandasDF = pandas_dataframe(x)
+        pandasDF = pandas_dataframe(x; include=include, exclude=exclude)
 
         # Convert y into Vector{Bool} by matching category of interest
         # Note that classification and coi can be strings or symbols,

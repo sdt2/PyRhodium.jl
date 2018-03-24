@@ -82,7 +82,7 @@ println("Reliability:            ", policy.reliability)
 # println("Inertia:                ", policy["inertia"])
 # println("Reliability:            ", policy["reliability"])
 
-# df = DataFrame(output)
+df = DataFrame(output)
 # arr = collect(output)
 
 result = apply(output, "total_pollution = sum(pollution_limit)")
@@ -121,6 +121,29 @@ box = find_box(p)
 
 # fig = show_tradeoff(box)
 
+fig = oat(model, "reliability", policy=policy, nsamples=1000)
+
 println("\nCART\n")
 c = Cart(results, classification, include=uncertainties, min_samples_leaf=50)
+
+println("Tree:")
 print_tree(c, coi="Reliable")
+
+println("\nMorris")
+result = sa(model, "reliability", policy=policy, method="morris", nsamples=1000, num_levels=4, grid_jump=2)
+println(result.pyo)
+
+println("\nSobol")
+result = sa(model, "reliability", policy=policy, method="sobol", nsamples=10000)
+println(result.pyo)
+
+fig = plot(result)
+
+fig = plot_sobol(result, threshold=0.01)
+
+fig = plot_sobol(result, threshold=0.01,
+                 groups=Dict("Lake Parameters" => ["b", "q"],
+                             "Natural Pollution" => ["mean", "stdev"],
+                             "Discounting" => ["delta"]))
+
+fig = oat(model, "reliability", policy=policy, nsamples=1000)
