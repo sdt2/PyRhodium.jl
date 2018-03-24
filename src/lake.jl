@@ -70,19 +70,19 @@ println("Found $(length(output)) optimal policies!")
 policy = output[5]
 policies = find(output, "utility > 0.5")
 
-policy = findmax(output, :reliability)
+policy = named_tuple(findmax(output, :reliability))
 
-# println("Max Phosphorus in Lake: ", policy.max_P)
-# println("Utility:                ", policy.utility)
-# println("Inertia:                ", policy.inertia)
-# println("Reliability:            ", policy.reliability)
+println("Max Phosphorus in Lake: ", policy.max_P)
+println("Utility:                ", policy.utility)
+println("Inertia:                ", policy.inertia)
+println("Reliability:            ", policy.reliability)
 
-println("Max Phosphorus in Lake: ", policy["max_P"])
-println("Utility:                ", policy["utility"])
-println("Inertia:                ", policy["inertia"])
-println("Reliability:            ", policy["reliability"])
+# println("Max Phosphorus in Lake: ", policy["max_P"])
+# println("Utility:                ", policy["utility"])
+# println("Inertia:                ", policy["inertia"])
+# println("Reliability:            ", policy["reliability"])
 
-df = DataFrame(output)
+# df = DataFrame(output)
 # arr = collect(output)
 
 result = apply(output, "total_pollution = sum(pollution_limit)")
@@ -115,7 +115,12 @@ classification = apply(results, "'Reliable' if reliability > 0.9 else 'Unreliabl
 
 uncertainties = [obj[:name] for obj in model.pyo[:uncertainties]]
 
-# p = Prim(results, classification, include=uncertainties, coi="Reliable")
+p = Prim(results, classification, include=uncertainties, coi="Reliable")
 
-# box = p.find_box()
-# fig = box.show_tradeoff()
+box = find_box(p)
+
+# fig = show_tradeoff(box)
+
+println("\nCART\n")
+c = Cart(results, classification, include=uncertainties, min_samples_leaf=50)
+print_tree(c, coi="Reliable")

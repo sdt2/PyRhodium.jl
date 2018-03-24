@@ -17,7 +17,8 @@ def make_box(x):
     ----------
     x : structured numpy array
     '''
-    print "\nmake_box():\n"
+    print "\nmake_box(%s):\n" % x
+
     # get the types in the order they appear in the numpy array
     types = [(v[1], k, v[0].name) for k, v in six.iteritems(x.dtype.fields)]
     types = sorted(types)
@@ -92,10 +93,22 @@ test(results, classification, include=uncertainties, coi="Reliable")
 
 # The call to make_box fails at the line:
 #    box = np.zeros((2, ), ntypes)
-# yet the following works:
 
-# This is the output printed from make_box:
-ntypes = py"[(u'b', 'float64'), (u'delta', 'float64'), (u'mean', 'float64'), (u'q', 'float64'), (u'stdev', 'float64')]"
-
+# This works
 @pyimport numpy as np
-np.zeros((2,), ntypes)
+println("1:", np.zeros((2,), ntypes))
+
+# This works
+py"""
+import numpy as np
+ntypes = [('b', 'float64'), ('delta', 'float64'), ('mean', 'float64'), ('q', 'float64'), ('stdev', 'float64')]
+print "2:", np.zeros((2,),  ntypes)
+"""
+
+# This fails, apparently due to the unicode strings.
+py"""
+import numpy as np
+ntypes = [(u'b', 'float64'), (u'delta', 'float64'), (u'mean', 'float64'), (u'q', 'float64'), (u'stdev', 'float64')]
+print "3:", np.zeros((2,),  ntypes)
+"""
+
