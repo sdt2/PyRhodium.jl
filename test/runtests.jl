@@ -1,4 +1,4 @@
 using PyRhodium
-using Base.Test
+using Test
 
 include("../examples/lake.jl")
