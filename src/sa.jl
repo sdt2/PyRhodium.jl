@@ -18,22 +18,6 @@ struct SAResult  <: Wrapper
     end
 end
 
-# Create a Python class that can store the SAResult (a subclass of dict) in 
-# an instance var so we can access it without conversion. Otherwise, PyCall 
-# converts it to a Dict and we can't use it as an argument to the plot routines
-# that are methods of rhodium.SARsult.
-py"""
-import rhodium
-
-class SAResultContainer(object):
-    def __init__(self, sa_result):
-        self.sa_result = sa_result
-
-def my_sa(*args, **kwargs):
-    sa_result = rhodium.sa(*args, **kwargs)
-    return SAResultContainer(sa_result)
-"""
-
 function sa(m::Model, response; policy=Dict(), method="sobol", nsamples=1000, kwargs...)
     my_sa = py"my_sa"
     pyo = my_sa(m.pyo, response; policy=policy, method=method, nsamples=nsamples, kwargs...)

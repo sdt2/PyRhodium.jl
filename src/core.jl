@@ -1,21 +1,3 @@
-@pyimport rhodium
-@pyimport prim
-@pyimport pandas as pd
-
-# TBD: see if it works to simply call __init__(function) without storing the julia function
-py"""
-from rhodium import *
-class JuliaModel(Model):
-    
-    def __init__(self, function, **kwargs):
-        super(JuliaModel, self).__init__(self._evaluate)
-        self.j_function = function
-        
-    def _evaluate(self, **kwargs):
-        result = self.j_function(**kwargs)
-        return result
-"""
-
 # Wrapper classes have a pyo field that holds a PyObject
 abstract type Wrapper end
 
@@ -134,11 +116,13 @@ end
 
 Base.length(ds::DataSet) = length(ds.pyo)
 
-Base.start(iter::DataSet) = 1
-
-Base.next(ds::DataSet, state) = ds.pyo[state], state + 1
-
-Base.done(ds::DataSet, state) = state > length(ds)
+function Base.iterate(ds::DataSet, state=1)
+    if state>length(ds)
+        return nothing
+    else
+        return ds.pyo[state], state + 1
+    end
+end
 
 Base.getindex(ds::DataSet, i::Int) = ds.pyo[i]
 
@@ -150,28 +134,28 @@ function Base.findmin(ds::DataSet, key::Symbol)
     return pycall(ds.pyo[:find_min], PyDict, String(key))
 end
 
-function Base.find(ds::DataSet, expr; inverse=false)
+# TODO This was a method on Base.find previously, maybe it should extend
+# some other Base method?
+function find(ds::DataSet, expr; inverse=false)
     return pycall(ds.pyo[:find], PyObject, expr, inverse=inverse)
 end
 
 # Create a NamedTuple type expression from the contents of the given dict,
 # returning the type or, if evaluate == false, the type expression.
-function make_NT_type(dict::Union{Dict, PyDict}; evaluate=true)
-    names = map(Symbol, keys(dict))
-    types = map(typeof, values(dict))
-    col_exprs = [:($name::$etype) for (etype, name) in zip(types, names)]
-    t_expr = NamedTuples.make_tuple(col_exprs)
-    return evaluate ? eval(t_expr) : t_expr
+function make_NT_type(dict::Union{Dict, PyDict})
+    names = [Symbol(i) for i in keys(dict)]
+    types = [typeof(i) for i in values(dict)]
+    return NamedTuple{tuple(names...), Tuple{types...}}
 end
 
 function named_tuple(d::Union{Dict, PyDict})
     T = make_NT_type(d)
-    return T(values(d)...)
+    return T(tuple(values(d)...))
 end
 
 function named_tuples(ds::DataSet)
     T = make_NT_type(ds[1])
-    output = [T(values(dict)...) for dict in ds]
+    output = [T(tuple(values(dict)...)) for dict in ds]
 end
 
 #
@@ -238,7 +222,7 @@ function set_parameters!(m::Model, parameters::Vector{Parameter})
     return nothing
 end
 
-set_parameters!{T<:Union{Symbol,Pair{Symbol,Any}}}(m::Model, v::Vector{T}) = set_parameters!(m, map(Parameter, v))
+set_parameters!(m::Model, v::Vector{T}) where {T<:Union{Symbol,Pair{Symbol,Any}}} = set_parameters!(m, map(Parameter, v))
 
 function set_responses!(m::Model, responses::Vector{Response})
     m.pyo[:responses] = map(pyo, responses)
@@ -310,34 +294,35 @@ end
 #     return res
 # end
 
-function _add_brush!(kwargs, brush)
+function _add_brush(kwargs, brush)
     if brush != nothing
-        push!(kwargs, (:brush, map(pyo, brush)))
+        return [kwargs...; (:brush, map(pyo, brush))]
+    else
+        return kwargs
     end
 end
 
 function scatter2d(m::Model, ds::DataSet; brush=nothing, kwargs...)
-    _add_brush!(kwargs, brush)
-    return rhodium.scatter2d(m.pyo, ds.pyo; kwargs...)
+    kwargs2 = _add_brush(kwargs, brush)
+    return rhodium.scatter2d(m.pyo, ds.pyo; kwargs2...)
 end
 
 function scatter3d(m::Model, ds::DataSet; brush=nothing, kwargs...)
-    _add_brush!(kwargs, brush)
-    return rhodium.scatter3d(m.pyo, ds.pyo; kwargs...)
+    kwargs2 = _add_brush(kwargs, brush)
+    return rhodium.scatter3d(m.pyo, ds.pyo; kwargs2...)
 end
 
 function pairs(m::Model, ds::DataSet; brush=nothing, kwargs...)
-    _add_brush!(kwargs, brush)
-    return rhodium.pairs(m.pyo, ds.pyo; kwargs...)
+    kwargs2 = _add_brush(kwargs, brush)
+    return rhodium.pairs(m.pyo, ds.pyo; kwargs2...)
 end
 
 function parallel_coordinates(m::Model, ds::DataSet; brush=nothing, kwargs...)
-    _add_brush!(kwargs, brush)
-    return rhodium.parallel_coordinates(m.pyo, ds.pyo; kwargs...)
+    kwargs2 = _add_brush(kwargs, brush)
+    return rhodium.parallel_coordinates(m.pyo, ds.pyo; kwargs2...)
 end
 
 function use_seaborn(style="darkgrid")
-    @pyimport seaborn as sns
-    sns.set()
-    sns.set_style(style)
+    seaborn.set()
+    seaborn.set_style(style)
 end

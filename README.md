@@ -16,10 +16,10 @@ This package is work in progress, not everything works at this moment.
 
 ## Installation
 
-The package runs on julia 0.6 and newer. To install, execute the following
+The package runs on julia 1.0 and newer. You can install the package at the Pkg REPL-mode with:
 julia code:
 ````julia
-Pkg.clone("https://github.com/davidanthoff/PyRhodium.jl.git")
+pkg> add https://github.com/davidanthoff/PyRhodium.jl.git
 ````
 
 ## Getting started

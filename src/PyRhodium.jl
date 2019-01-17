@@ -3,7 +3,6 @@ module PyRhodium
 using PyCall
 using PyPlot
 using IterableTables
-using NamedTuples
 using Distributions
 using DataFrames
 using DataStructures
@@ -16,7 +15,44 @@ export
     set_levers!, set_responses!, set_constraints!, set_uncertainties!,
     Prim, PrimBox, find_box, find_all, show_tradeoff, stats, limits,
     Cart, show_tree, print_tree, save, save_pdf, save_png,
-    Sensitivity, SAResult, sa, oat, plot, plot_sobol
+    Sensitivity, SAResult, sa, oat, plot, plot_sobol, find
+
+function __init__()
+    global rhodium = pywrap(pyimport("rhodium"))
+    global prim = pywrap(pyimport("prim"))
+    global pd = pywrap(pyimport("pandas"))
+    global seaborn = pywrap(pyimport("seaborn"))
+
+    # TBD: see if it works to simply call __init__(function) without storing the julia function
+    py"""
+    from rhodium import *
+    class JuliaModel(Model):
+        
+        def __init__(self, function, **kwargs):
+            super(JuliaModel, self).__init__(self._evaluate)
+            self.j_function = function
+            
+        def _evaluate(self, **kwargs):
+            result = self.j_function(**kwargs)
+            return result
+    """
+
+    # Create a Python class that can store the SAResult (a subclass of dict) in 
+    # an instance var so we can access it without conversion. Otherwise, PyCall 
+    # converts it to a Dict and we can't use it as an argument to the plot routines
+    # that are methods of rhodium.SARsult.
+    py"""
+    import rhodium
+
+    class SAResultContainer(object):
+        def __init__(self, sa_result):
+            self.sa_result = sa_result
+
+    def my_sa(*args, **kwargs):
+        sa_result = rhodium.sa(*args, **kwargs)
+        return SAResultContainer(sa_result)
+    """    
+end
 
 include("core.jl")
 include("prim.jl")
