@@ -2,6 +2,7 @@ using PyRhodium
 using Roots
 using Distributions
 using DataFrames
+using Random
 
 function lake_problem(;pollution_limit=nothing,
          b = 0.42,       # decay rate for P in lake (0.42 = irreversible)
@@ -69,7 +70,7 @@ policy = output[5]
 policy = findmax(output, :reliability)
 policies = find(output, "utility > 0.5");
 
-policy = findmax(output, :reliability)
+policy = named_tuple(findmax(output, :reliability))
 
 println("Max Phosphorus in Lake: ", policy.max_P)
 println("Utility:                ", policy.utility)
