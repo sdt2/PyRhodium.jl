@@ -253,6 +253,8 @@ function set_uncertainties!(m::Model, uncertainties::Vector{Pair{Symbol,T}} wher
     m.pyo[:uncertainties] = map(uncertainties) do i
         if i.second isa Uniform{Float64}
             rhodium.UniformUncertainty(string(i.first), i.second.a, i.second.b)
+        elseif i.second isa DiscreteUniform
+            rhodium.IntegerUncertainty(string(i.first), i.second.a, i.second.b)
         else
             error("Distribution type $(typeof(i.second)) is not currently supported by Rhodium")
         end
