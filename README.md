@@ -19,7 +19,7 @@ This package is work in progress, not everything works at this moment.
 The package runs on julia 1.0 and newer. You can install the package at the Pkg REPL-mode with:
 julia code:
 ````julia
-pkg> add https://github.com/davidanthoff/PyRhodium.jl.git
+pkg> add PyRhodium
 ````
 
 ## Getting started
