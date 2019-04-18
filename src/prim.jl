@@ -15,7 +15,7 @@ function Base.show(io::IO, box::PrimBox)
 end
 
 function show_tradeoff(box::PrimBox)
-    fig = pycall(box.pyo[:show_tradeoff], PyObject)
+    fig = pycall(box.pyo.show_tradeoff, PyObject)
     return fig
 end
 
@@ -72,7 +72,7 @@ struct Prim <: Wrapper
 end
 
 function find_box(p::Prim)
-    pyo = pycall(p.pyo[:find_box], PyObject)
+    pyo = pycall(p.pyo.find_box, PyObject)
     return PrimBox(pyo)
 end
 
