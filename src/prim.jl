@@ -11,7 +11,7 @@ struct PrimBox <: Wrapper
 end
 
 function Base.show(io::IO, box::PrimBox)
-    print(io, box.pyo[:__str__]())
+    print(io, box.pyo.__str__())
 end
 
 function show_tradeoff(box::PrimBox)

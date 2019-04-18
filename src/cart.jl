@@ -17,12 +17,12 @@ struct Cart <: Wrapper
 end
 
 function show_tree(c::Cart; kwargs...)
-    fig = c.pyo[:show_tree](kwargs...)
+    fig = c.pyo.show_tree(kwargs...)
     return fig
 end
 
 function print_tree(c::Cart; coi=nothing, all=true, kwargs...)
-    c.pyo[:print_tree](;coi=coi, all=all, kwargs...)
+    c.pyo.print_tree(;coi=coi, all=all, kwargs...)
     nothing
 end
 

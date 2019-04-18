@@ -17,11 +17,16 @@ export
     Cart, show_tree, print_tree, save, save_pdf, save_png,
     Sensitivity, SAResult, sa, oat, plot, plot_sobol, find
 
+const rhodium = PyNULL()
+const prim = PyNULL()
+const pd = PyNULL()
+const seaborn = PyNULL()
+
 function __init__()
-    global rhodium = pywrap(pyimport("rhodium"))
-    global prim = pywrap(pyimport("prim"))
-    global pd = pywrap(pyimport("pandas"))
-    global seaborn = pywrap(pyimport("seaborn"))
+    copy!(rhodium, pyimport("rhodium"))
+    copy!(prim, pyimport("prim"))
+    copy!(pd, pyimport("pandas"))
+    copy!(seaborn, pyimport("seaborn"))
 
     # TBD: see if it works to simply call __init__(function) without storing the julia function
     py"""

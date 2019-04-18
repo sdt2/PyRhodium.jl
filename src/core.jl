@@ -32,9 +32,18 @@ struct Response <: Wrapper
     pyo::PyObject
 
     function Response(name::AbstractString, kind::Symbol)
-        kind in (:MAXIMIZE, :MINIMIZE, :INFO) || error("The kind argument must be either :MAXIMIZE or :MINIMIZE")
+        resp = if kind==:MAXIMIZE
+            rhodium.Response.MAXIMIZE
+        elseif kind==:MINIMIZE
+            rhodium.Response.MINIMIZE
+        elseif kind==:INFO
+            rhodium.Response.INFO
+        else
+            error("The kind argument must be either :MAXIMIZE, :MINIMIZE or :INFO")
+        end
 
-        return new(rhodium.Response(name, rhodium.Response[kind]))
+
+        return new(rhodium.Response(name, resp))
     end
     
 end
@@ -120,24 +129,24 @@ function Base.iterate(ds::DataSet, state=1)
     if state>length(ds)
         return nothing
     else
-        return ds.pyo[state], state + 1
+        return get(ds.pyo, state-1), state + 1
     end
 end
 
-Base.getindex(ds::DataSet, i::Int) = ds.pyo[i]
+Base.getindex(ds::DataSet, i::Int) = get(ds.pyo, i-1)
 
 function Base.findmax(ds::DataSet, key::Symbol)
-    return pycall(ds.pyo[:find_max], PyDict, String(key))
+    return pycall(ds.pyo.find_max, PyDict, String(key))
 end
 
 function Base.findmin(ds::DataSet, key::Symbol)
-    return pycall(ds.pyo[:find_min], PyDict, String(key))
+    return pycall(ds.pyo.find_min, PyDict, String(key))
 end
 
 # TODO This was a method on Base.find previously, maybe it should extend
 # some other Base method?
 function find(ds::DataSet, expr; inverse=false)
-    return pycall(ds.pyo[:find], PyObject, expr, inverse=inverse)
+    return pycall(ds.pyo.find, PyObject, expr, inverse=inverse)
 end
 
 # Create a NamedTuple type expression from the contents of the given dict,
@@ -218,39 +227,47 @@ Set model parameters using one of these forms:
 
 """
 function set_parameters!(m::Model, parameters::Vector{Parameter})
-    m.pyo[:parameters] = map(pyo, parameters)
+    m.pyo.parameters = map(pyo, parameters)
     return nothing
 end
 
 set_parameters!(m::Model, v::Vector{T}) where {T<:Union{Symbol,Pair{Symbol,Any}}} = set_parameters!(m, map(Parameter, v))
 
 function set_responses!(m::Model, responses::Vector{Response})
-    m.pyo[:responses] = map(pyo, responses)
+    m.pyo.responses = map(pyo, responses)
     return nothing
 end
 
 function set_responses!(m::Model, responses::Vector{Pair{Symbol,Symbol}})
-    m.pyo[:responses] = map(responses) do i        
-        i.second in (:MAXIMIZE, :MINIMIZE, :INFO) || error("The kind argument must be either :MAXIMIZE or :MINIMIZE")
-        return rhodium.Response(String(i.first), rhodium.Response[i.second])
+    m.pyo.responses = map(responses) do i
+        resp = if i.second==:MAXIMIZE
+            rhodium.Response.MAXIMIZE
+        elseif i.second==:MINIMIZE
+            rhodium.Response.MINIMIZE
+        elseif i.second==:INFO
+            rhodium.Response.INFO
+        else
+            error("The kind argument must be either :MAXIMIZE, :MINIMIZE or :INFO")
+        end
+        return rhodium.Response(String(i.first), resp)
     end
     nothing
 end
 
 function set_levers!(m::Model, levers::Vector{T}) where T <: Lever
-    m.pyo[:levers] = map(pyo, levers)
+    m.pyo.levers = map(pyo, levers)
     return nothing
 end
 
 function set_constraints!(m::Model, constraints::Vector{Constraint})
-    m.pyo[:constraints] = map(pyo, constraints)
+    m.pyo.constraints = map(pyo, constraints)
     return nothing
 end
 
 set_constraints!(m::Model, v::Vector) = set_constraints!(m, map(Constraint, v))
 
 function set_uncertainties!(m::Model, uncertainties::Vector{Pair{Symbol,T}} where T)
-    m.pyo[:uncertainties] = map(uncertainties) do i
+    m.pyo.uncertainties = map(uncertainties) do i
         if i.second isa Uniform{Float64}
             rhodium.UniformUncertainty(string(i.first), i.second.a, i.second.b)
         elseif i.second isa DiscreteUniform
@@ -286,7 +303,7 @@ function evaluate(m::Model, policies::Vector)
 end
 
 function apply(ds::DataSet, expr; update=true)
-    res = pycall(ds.pyo[:apply], PyVector, expr, update)
+    res = pycall(ds.pyo.apply, PyVector, expr, update)
     return collect(res)
 end
 
