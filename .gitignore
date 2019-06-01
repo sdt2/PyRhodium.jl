@@ -5,3 +5,4 @@
 deps/build.log
 rjp
 examples/Manifest.toml
+.vscode
