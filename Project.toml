@@ -13,8 +13,9 @@ PyPlot = "d330b81b-6aea-500a-939a-2ce795aea3ee"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 
 [compat]
-julia = "≥ 1.0.0"
+Distributions = "0.21"
 PyCall = "≥ 1.91.0"
+julia = "≥ 1.0.0"
 
 [extras]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
