@@ -24,7 +24,7 @@ function lake_problem(;pollution_limit = nothing,
     natural_inflows = zeros(nvars)
 
     for i in 1:nsamples
-        X[1] = 0.0        
+        X[1] = 0.0
 
         rand!(d, natural_inflows)
 
