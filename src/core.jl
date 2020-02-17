@@ -17,26 +17,26 @@ end
 
 struct Parameter <: Wrapper
     pyo::PyObject
-    
-    function Parameter(name::AbstractString, default_value::Any=nothing)
-        return new(rhodium.Parameter(name, default_value=default_value))
+
+    function Parameter(name::AbstractString, default_value::Any = nothing)
+        return new(rhodium.Parameter(name, default_value = default_value))
     end
 end
 
-Parameter(name::Symbol, default_value::Any=nothing) = Parameter(String(name), default_value)
+Parameter(name::Symbol, default_value::Any = nothing) = Parameter(String(name), default_value)
 
-Parameter(pair::Pair{Symbol, Any}) = Parameter(pair.first, pair.second)
+Parameter(pair::Pair{Symbol,Any}) = Parameter(pair.first, pair.second)
 
 
 struct Response <: Wrapper
     pyo::PyObject
 
     function Response(name::AbstractString, kind::Symbol)
-        resp = if kind==:MAXIMIZE
+        resp = if kind == :MAXIMIZE
             rhodium.Response.MAXIMIZE
-        elseif kind==:MINIMIZE
+        elseif kind == :MINIMIZE
             rhodium.Response.MINIMIZE
-        elseif kind==:INFO
+        elseif kind == :INFO
             rhodium.Response.INFO
         else
             error("The kind argument must be either :MAXIMIZE, :MINIMIZE or :INFO")
@@ -45,7 +45,7 @@ struct Response <: Wrapper
 
         return new(rhodium.Response(name, resp))
     end
-    
+
 end
 
 abstract type Lever  <: Wrapper end
@@ -53,16 +53,16 @@ abstract type Lever  <: Wrapper end
 struct IntegerLever <: Lever
     pyo::PyObject
 
-    function IntegerLever(name::AbstractString, min_value::Int, max_value::Int; length::Int=1)
-        return new(rhodium.IntegerLever(name, min_value, max_value, length=length))
+    function IntegerLever(name::AbstractString, min_value::Int, max_value::Int; length::Int = 1)
+        return new(rhodium.IntegerLever(name, min_value, max_value, length = length))
     end
 end
 
 struct RealLever <: Lever
     pyo::PyObject
 
-    function RealLever(name::AbstractString, min_value::Float64, max_value::Float64; length::Int=1)
-        return new(rhodium.RealLever(name, min_value, max_value, length=length))
+    function RealLever(name::AbstractString, min_value::Float64, max_value::Float64; length::Int = 1)
+        return new(rhodium.RealLever(name, min_value, max_value, length = length))
     end
 end
 
@@ -118,22 +118,22 @@ struct DataSet <: Wrapper
     end
 
     # A string argument is interpreted in the python func as a file to load
-    function DataSet(data::Union{AbstractString, AbstractArray}=nothing)
+    function DataSet(data::Union{AbstractString,AbstractArray} = nothing)
         new(rhodium.DataSet(data))
     end
 end
 
 Base.length(ds::DataSet) = length(ds.pyo)
 
-function Base.iterate(ds::DataSet, state=1)
-    if state>length(ds)
+function Base.iterate(ds::DataSet, state = 1)
+    if state > length(ds)
         return nothing
     else
-        return get(ds.pyo, state-1), state + 1
+        return get(ds.pyo, state - 1), state + 1
     end
 end
 
-Base.getindex(ds::DataSet, i::Int) = get(ds.pyo, i-1)
+Base.getindex(ds::DataSet, i::Int) = get(ds.pyo, i - 1)
 
 function Base.findmax(ds::DataSet, key::Symbol)
     return pycall(ds.pyo.find_max, PyDict, String(key))
@@ -145,19 +145,19 @@ end
 
 # TODO This was a method on Base.find previously, maybe it should extend
 # some other Base method?
-function find(ds::DataSet, expr; inverse=false)
-    return pycall(ds.pyo.find, PyObject, expr, inverse=inverse)
+function find(ds::DataSet, expr; inverse = false)
+    return pycall(ds.pyo.find, PyObject, expr, inverse = inverse)
 end
 
 # Create a NamedTuple type expression from the contents of the given dict,
 # returning the type or, if evaluate == false, the type expression.
-function make_NT_type(dict::Union{Dict, PyDict})
+function make_NT_type(dict::Union{Dict,PyDict})
     names = [Symbol(i) for i in keys(dict)]
     types = [typeof(i) for i in values(dict)]
-    return NamedTuple{tuple(names...), Tuple{types...}}
+    return NamedTuple{tuple(names...),Tuple{types...}}
 end
 
-function named_tuple(d::Union{Dict, PyDict})
+function named_tuple(d::Union{Dict,PyDict})
     T = make_NT_type(d)
     return T(tuple(values(d)...))
 end
@@ -172,21 +172,21 @@ end
 #
 DataFrames.DataFrame(ds::DataSet) = DataFrames.DataFrame(named_tuples(ds))
 
-function DataStructures.Dict(nt::NamedTuple) 
-    return DataStructures.Dict{Symbol, Any}(collect(k => v for (k, v) in zip(keys(nt), values(nt))))
+function DataStructures.Dict(nt::NamedTuple)
+    return DataStructures.Dict{Symbol,Any}(collect(k => v for (k, v) in zip(keys(nt), values(nt))))
 end
 
 function DataStructures.Dict(pydict::PyDict)
     return DataStructures.Dict(Symbol(k) => v for (k, v) in pydict)
 end
 
-function pandas_dataframe(ds::DataSet; include=nothing, exclude=nothing)
-    # TBD: Convert directly to np.recarray? That's the end result 
+function pandas_dataframe(ds::DataSet; include = nothing, exclude = nothing)
+    # TBD: Convert directly to np.recarray? That's the end result
     # on the python side, so we'd avoid building 2 intermediate DFs.
     df = DataFrame(ds)
 
     # However... numpy's drop_names is failing, complaining about
-    # 'data type not understood',). We process the include/exclude 
+    # 'data type not understood',). We process the include/exclude
     # args here before passing the data to python.
     if include != nothing
         if ! (include isa AbstractArray)
@@ -196,12 +196,12 @@ function pandas_dataframe(ds::DataSet; include=nothing, exclude=nothing)
         colnames = [Symbol(name) for name in include]
         df = df[colnames]
     end
-    
+
     if exclude != nothing
         if ! (exclude isa AbstractArray)
             exclude = [exclude]
         end
-        
+
         colnames = collect(setdiff(Set(names(df)), Set(map(Symbol, exclude))))
         df = df[colnames]
     end
@@ -231,7 +231,7 @@ function set_parameters!(m::Model, parameters::Vector{Parameter})
     return nothing
 end
 
-set_parameters!(m::Model, v::Vector{T}) where {T<:Union{Symbol,Pair{Symbol,Any}}} = set_parameters!(m, map(Parameter, v))
+set_parameters!(m::Model, v::Vector{T}) where {T <: Union{Symbol,Pair{Symbol,Any}}} = set_parameters!(m, map(Parameter, v))
 
 function set_responses!(m::Model, responses::Vector{Response})
     m.pyo.responses = map(pyo, responses)
@@ -240,11 +240,11 @@ end
 
 function set_responses!(m::Model, responses::Vector{Pair{Symbol,Symbol}})
     m.pyo.responses = map(responses) do i
-        resp = if i.second==:MAXIMIZE
+        resp = if i.second == :MAXIMIZE
             rhodium.Response.MAXIMIZE
-        elseif i.second==:MINIMIZE
+        elseif i.second == :MINIMIZE
             rhodium.Response.MINIMIZE
-        elseif i.second==:INFO
+        elseif i.second == :INFO
             rhodium.Response.INFO
         else
             error("The kind argument must be either :MAXIMIZE, :MINIMIZE or :INFO")
@@ -302,7 +302,7 @@ function evaluate(m::Model, policies::Vector)
     return DataSet(py_output)
 end
 
-function apply(ds::DataSet, expr; update=true)
+function apply(ds::DataSet, expr; update = true)
     res = pycall(ds.pyo.apply, PyVector, expr, update)
     return collect(res)
 end
@@ -321,27 +321,27 @@ function _add_brush(kwargs, brush)
     end
 end
 
-function scatter2d(m::Model, ds::DataSet; brush=nothing, kwargs...)
+function scatter2d(m::Model, ds::DataSet; brush = nothing, kwargs...)
     kwargs2 = _add_brush(kwargs, brush)
     return rhodium.scatter2d(m.pyo, ds.pyo; kwargs2...)
 end
 
-function scatter3d(m::Model, ds::DataSet; brush=nothing, kwargs...)
+function scatter3d(m::Model, ds::DataSet; brush = nothing, kwargs...)
     kwargs2 = _add_brush(kwargs, brush)
     return rhodium.scatter3d(m.pyo, ds.pyo; kwargs2...)
 end
 
-function pairs(m::Model, ds::DataSet; brush=nothing, kwargs...)
+function pairs(m::Model, ds::DataSet; brush = nothing, kwargs...)
     kwargs2 = _add_brush(kwargs, brush)
     return rhodium.pairs(m.pyo, ds.pyo; kwargs2...)
 end
 
-function parallel_coordinates(m::Model, ds::DataSet; brush=nothing, kwargs...)
+function parallel_coordinates(m::Model, ds::DataSet; brush = nothing, kwargs...)
     kwargs2 = _add_brush(kwargs, brush)
     return rhodium.parallel_coordinates(m.pyo, ds.pyo; kwargs2...)
 end
 
-function use_seaborn(style="darkgrid")
+function use_seaborn(style = "darkgrid")
     seaborn.set()
     seaborn.set_style(style)
 end
